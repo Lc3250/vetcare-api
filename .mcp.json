@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "vetcare-kb": {
+      "command": "python",
+      "args": ["-m", "mcp_server.server"],
+      "env": {
+        "VETCARE_VAULT_PATH": "${VETCARE_VAULT_PATH}",
+        "VETCARE_VAULT_BRANCH": "${VETCARE_VAULT_BRANCH:-main}"
+      }
+    }
+  }
+}
