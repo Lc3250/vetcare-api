@@ -79,7 +79,7 @@ def test_get_note_and_missing(vault):
 
 
 def test_search_notes_exact_substring(vault):
-    s = VaultStore(vault[0])
+    s = VaultStore(vault[0], search_mode="exact")
     hits = s.search_notes("пацієнт")
     assert [h["title"] for h in hits] == ["Тварина"]
     assert s.search_notes("зовсім відсутнє слово") == []

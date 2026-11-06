@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 from dataclasses import dataclass
@@ -56,9 +57,14 @@ def validate_title(title: str) -> str:
 
 
 class VaultStore:
-    def __init__(self, path: str | Path, branch: str = "main", remote: str = "origin", push: bool = True):
+    def __init__(self, path: str | Path, branch: str = "main", remote: str = "origin", push: bool = True,
+                 search_mode: str | None = None, index_dir: str | Path | None = None):
         self.root = Path(path).resolve()
         self.branch, self.remote, self.push = branch, remote, push
+        # режим пошуку: vector (за замовчуванням) або exact (збіг підрядка)
+        self.search_mode = (search_mode or os.environ.get("VETCARE_SEARCH", "vector")).lower()
+        self.index_dir = Path(index_dir or os.environ.get("VETCARE_INDEX_DIR")
+                              or Path(__file__).resolve().parent.parent / ".index")
         if not (self.root / ".git").exists():
             raise VaultError(f"{self.root} не є git-репозиторієм")
 
@@ -120,6 +126,16 @@ class VaultStore:
         return notes[title].read_text(encoding="utf-8")
 
     def search_notes(self, query: str, limit: int = 5) -> list[dict]:
+        """Пошук нотаток: за замовчуванням семантичний (векторний індекс), режим exact лишає збіг підрядка."""
+        if not query.strip():
+            return []
+        if self.search_mode == "exact":
+            return self.search_notes_exact(query, limit)
+        from mcp_server.vector_index import VectorIndex
+
+        return VectorIndex.load_or_build(self.root, self.index_dir).search(query, limit)
+
+    def search_notes_exact(self, query: str, limit: int = 5) -> list[dict]:
         """Базовий пошук: збіг підрядка в назві чи тексті (без урахування регістру)."""
         q = query.strip().lower()
         if not q:

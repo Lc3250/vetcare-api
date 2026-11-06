@@ -4,6 +4,9 @@
 
 База знань лежить в окремому репозиторії [vetcare-knowledge-base](https://github.com/Lc3250/vetcare-knowledge-base); агент працює з нею лише через MCP-сервер `mcp_server/`.
 
+## Пошук по vault
+`search_notes` використовує локальний векторний індекс (`.index/`, не комітиться). Детально: [docs/rag-evaluation.md](docs/rag-evaluation.md).
+
 ## Запуск тестів
 ```
 pip install -r requirements.txt
