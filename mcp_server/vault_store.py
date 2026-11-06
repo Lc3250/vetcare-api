@@ -14,6 +14,13 @@ FOLDERS = {
     "glossary": "Glossary",
 }
 _FRONT = re.compile(r"\A---\n(.*?)\n---\n", re.S)
+SECTIONS = {
+    "concept": "## Поняття",
+    "component": "## Компоненти",
+    "decision": "## Рішення",
+    "glossary": "## Глосарій",
+}
+MOC_TITLE = "MOC-Застосунок"
 _BAD_TITLE = re.compile(r'[\\/:*?"<>|\n\r]|\.\.')
 
 
@@ -71,6 +78,28 @@ class VaultStore:
             self._git("checkout", self.branch) if exists else self._git("checkout", "-b", self.branch)
         if self._remote_has_branch():
             self._git("pull", "--rebase", "--autostash", self.remote, self.branch)
+
+    def _unpushed(self) -> bool:
+        """True, якщо у локальній гілці є коміти, яких немає у віддаленій."""
+        if not self._remote_has_branch():
+            return True
+        self._git("fetch", self.remote, self.branch)
+        return int(self._git("rev-list", "--count", f"{self.remote}/{self.branch}..{self.branch}").strip() or 0) > 0
+
+    def _register_in_moc(self, title: str, note_type: str) -> str | None:
+        """Додає посилання на нову нотатку в розділ MOC, щоб vault лишався зв'язним."""
+        moc = self._all_notes().get(MOC_TITLE)
+        header = SECTIONS.get(note_type)
+        if moc is None or header is None:
+            return None
+        text = moc.read_text(encoding="utf-8")
+        if f"[[{title}]]" in text or header not in text:
+            return None
+        head, _, rest = text.partition(header + "\n")
+        section, sep, tail = rest.partition("\n## ")
+        section = section.rstrip("\n") + f"\n- [[{title}]]\n"
+        moc.write_text(head + header + "\n" + section + ("\n## " + tail if sep else ""), encoding="utf-8")
+        return str(moc.relative_to(self.root))
 
     # ---------- читання ----------
     def _all_notes(self) -> dict[str, Path]:
@@ -134,11 +163,20 @@ class VaultStore:
         new_text = self.render(title, type, content, links, tags, created)
         rel = str(path.relative_to(self.root))
         if existing and existing.read_text(encoding="utf-8") == new_text:
-            return IngestResult("unchanged", rel, False)
+            # зміст не змінився, але раніше невдалий push треба догнати
+            pushed = self.push and self._unpushed()
+            if pushed:
+                self._git("push", "-u", self.remote, self.branch)
+            return IngestResult("unchanged", rel, pushed)
         status = "updated" if existing else "created"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(new_text, encoding="utf-8")
-        self._git("add", rel)
+        to_add = [rel]
+        if not existing:
+            moc_rel = self._register_in_moc(title, type)
+            if moc_rel:
+                to_add.append(moc_rel)
+        self._git("add", *to_add)
         self._git("commit", "-m", f"vault: {status} {title}")
         pushed = False
         if self.push:

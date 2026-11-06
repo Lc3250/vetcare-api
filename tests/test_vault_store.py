@@ -83,3 +83,31 @@ def test_search_notes_exact_substring(vault):
     hits = s.search_notes("пацієнт")
     assert [h["title"] for h in hits] == ["Тварина"]
     assert s.search_notes("зовсім відсутнє слово") == []
+
+
+def test_new_note_is_registered_in_moc(vault):
+    work, _ = vault
+    (work / "MOC-Застосунок.md").write_text(
+        "---\ntype: moc\ncreated: 2026-01-01\ntags: [moc]\n---\n\n# MOC\n\n"
+        "## Рішення\n- [[Старе]]\n\n## Глосарій\n- [[Термін]]\n",
+        encoding="utf-8")
+    run_git("-C", str(work), "add", "-A")
+    run_git("-C", str(work), "commit", "-m", "moc")
+    s = VaultStore(work)
+    s.ingest_note("Нове рішення", "decision", "Текст")
+    moc = (work / "MOC-Застосунок.md").read_text(encoding="utf-8")
+    assert moc.index("[[Нове рішення]]") < moc.index("## Глосарій")
+    s.ingest_note("Нове рішення", "decision", "Текст")
+    assert (work / "MOC-Застосунок.md").read_text(encoding="utf-8").count("[[Нове рішення]]") == 1
+
+
+def test_unpushed_commit_is_pushed_on_repeat_call(vault, tmp_path):
+    work, remote = vault
+    run_git("-C", str(work), "remote", "set-url", "origin", str(tmp_path / "nowhere.git"))
+    s = VaultStore(work)
+    with pytest.raises(VaultError):
+        s.ingest_note("Рішення Д", "decision", "Текст")
+    run_git("-C", str(work), "remote", "set-url", "origin", str(remote))
+    r = s.ingest_note("Рішення Д", "decision", "Текст")
+    assert r.status == "unchanged" and r.pushed
+    assert "vault: created Рішення Д" in run_git("--git-dir", str(remote), "log", "--oneline", "main")
