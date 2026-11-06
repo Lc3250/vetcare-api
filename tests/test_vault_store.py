@@ -134,3 +134,18 @@ def test_add_relation_validates_input(vault):
         s.add_relation("Тварина", "belongs_to", ["Немає такої"])
     with pytest.raises(VaultError):
         s.add_relation("Немає такої", "belongs_to", ["Тварина"])
+
+
+def test_ingest_meta_fields_are_written_and_preserved_on_update(vault):
+    work, _ = vault
+    s = VaultStore(work)
+    s.ingest_note("Компонент М", "component", "Опис", meta={"path": "core/x.py", "layer": "core"})
+    s.ingest_note("Компонент М", "component", "Новий опис")
+    text = (work / "Components" / "Компонент М.md").read_text(encoding="utf-8")
+    assert "path: core/x.py" in text and "layer: core" in text and "Новий опис" in text
+
+
+@pytest.mark.parametrize("key", ["type", "Bad Key", "a\nb"])
+def test_ingest_rejects_bad_meta_keys(vault, key):
+    with pytest.raises(VaultError):
+        VaultStore(vault[0]).ingest_note("Назва М", "component", "x", meta={key: "v"})

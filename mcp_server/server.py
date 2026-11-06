@@ -33,14 +33,17 @@ def store() -> VaultStore:
 
 @mcp.tool()
 def ingest_note(title: str, type: str, content: str,
-                links: list[str] | None = None, tags: list[str] | None = None) -> dict:
+                links: list[str] | None = None, tags: list[str] | None = None,
+                meta: dict[str, str] | None = None) -> dict:
     """Створює або оновлює нотатку у vault, комітить і пушить зміни.
 
     type: concept | component | decision | glossary.
     links: назви нотаток, на які треба послатися (записуються як wiki-посилання).
+    meta: додаткові поля frontmatter (наприклад, path, layer, status для компонентів);
+    наявні поля при оновленні нотатки зберігаються.
     Повторний виклик з тими самими даними повертає status=unchanged.
     """
-    return store().ingest_note(title, type, content, links, tags).as_dict()
+    return store().ingest_note(title, type, content, links, tags, meta).as_dict()
 
 
 @mcp.tool()

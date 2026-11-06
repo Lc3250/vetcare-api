@@ -151,7 +151,8 @@ class VaultStore:
         return f"---\ntype: {note_type}\ncreated: {created}\ntags: [{tag_line}]\n{extra_lines}---\n\n{body}"
 
     def ingest_note(self, title: str, type: str, content: str,
-                    links: list[str] | None = None, tags: list[str] | None = None) -> IngestResult:
+                    links: list[str] | None = None, tags: list[str] | None = None,
+                    meta: dict[str, str] | None = None) -> IngestResult:
         if type not in FOLDERS:
             raise VaultError(f"Невідомий тип {type!r}; дозволені: {', '.join(FOLDERS)}")
         title = validate_title(title)
@@ -165,7 +166,12 @@ class VaultStore:
         if existing:
             fm, _ = parse_frontmatter(existing.read_text(encoding="utf-8"))
             created = fm.get("created", created)
-            extra = {k: v for k, v in fm.items() if k in RELATIONS}  # типізовані зв'язки зберігаємо
+            # додаткові поля frontmatter (path, layer, status, типізовані зв'язки) зберігаємо при оновленні
+            extra = {k: v for k, v in fm.items() if k not in ("type", "created", "tags")}
+        for key, value in (meta or {}).items():
+            if not re.fullmatch(r"[a-z_]+", key) or key in ("type", "created", "tags") or "\n" in str(value):
+                raise VaultError(f"Некоректне поле frontmatter: {key!r}")
+            extra[key] = str(value)
         new_text = self.render(title, type, content, links, tags, created, extra)
         rel = str(path.relative_to(self.root))
         if existing and existing.read_text(encoding="utf-8") == new_text:
