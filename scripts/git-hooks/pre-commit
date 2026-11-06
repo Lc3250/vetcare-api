@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Незалежний від IDE рубіж: блокує коміт у main та коміт із секретами.
+branch=$(git symbolic-ref --short HEAD 2>/dev/null)
+if [ "$branch" = "main" ] && [ -z "$ALLOW_MAIN_COMMIT" ]; then
+  echo "pre-commit [B-01]: прямий коміт у main заборонено; створіть гілку." >&2
+  exit 1
+fi
+if git diff --cached -U0 | grep -E '^\+' | grep -Eq "(ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----)"; then
+  echo "pre-commit [B-05]: у змінах виявлено секрет." >&2
+  exit 1
+fi
+exit 0

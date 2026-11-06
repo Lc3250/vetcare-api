@@ -32,7 +32,7 @@ def _payload(result):
 
 def test_server_tools_over_stdio(vault):
     tools, first, second, found, note = anyio.run(_scenario, vault[0])
-    assert tools == {"ingest_note", "get_note", "search_notes"}
+    assert tools == {"ingest_note", "link_notes", "get_note", "search_notes"}
     assert _payload(first)["status"] == "created"
     assert _payload(second)["status"] == "unchanged"
     assert "Тварина" in found.content[0].text

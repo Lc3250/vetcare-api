@@ -111,3 +111,26 @@ def test_unpushed_commit_is_pushed_on_repeat_call(vault, tmp_path):
     r = s.ingest_note("Рішення Д", "decision", "Текст")
     assert r.status == "unchanged" and r.pushed
     assert "vault: created Рішення Д" in run_git("--git-dir", str(remote), "log", "--oneline", "main")
+
+
+def test_add_relation_is_idempotent_and_survives_ingest(vault):
+    work, _ = vault
+    s = VaultStore(work)
+    s.ingest_note("Компонент Х", "component", "Опис")
+    first = s.add_relation("Компонент Х", "depends_on", ["Тварина"])
+    n = commits(work)
+    again = s.add_relation("Компонент Х", "depends_on", ["Тварина"])
+    assert first.status == "updated" and again.status == "unchanged" and commits(work) == n
+    s.ingest_note("Компонент Х", "component", "Оновлений опис")
+    text = (work / "Components" / "Компонент Х.md").read_text(encoding="utf-8")
+    assert 'depends_on: ["Тварина"]' in text and "Оновлений опис" in text
+
+
+def test_add_relation_validates_input(vault):
+    s = VaultStore(vault[0])
+    with pytest.raises(VaultError):
+        s.add_relation("Тварина", "likes", ["Тварина"])
+    with pytest.raises(VaultError):
+        s.add_relation("Тварина", "belongs_to", ["Немає такої"])
+    with pytest.raises(VaultError):
+        s.add_relation("Немає такої", "belongs_to", ["Тварина"])

@@ -44,6 +44,16 @@ def ingest_note(title: str, type: str, content: str,
 
 
 @mcp.tool()
+def link_notes(title: str, relation: str, targets: list[str]) -> dict:
+    """Додає типізований зв'язок у frontmatter нотатки.
+
+    relation: depends_on | implements | supersedes | belongs_to.
+    targets: назви наявних нотаток. Повторний виклик не змінює нотатку.
+    """
+    return store().add_relation(title, relation, targets).as_dict()
+
+
+@mcp.tool()
 def get_note(title: str) -> str:
     """Повертає повний текст нотатки за точною назвою (без розширення)."""
     return store().get_note(title)

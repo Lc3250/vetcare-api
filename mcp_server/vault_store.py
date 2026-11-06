@@ -1,6 +1,7 @@
 """Робота з локальним клоном vault: читання, пошук та ідемпотентний запис нотаток."""
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 from dataclasses import dataclass
@@ -21,6 +22,7 @@ SECTIONS = {
     "glossary": "## Глосарій",
 }
 MOC_TITLE = "MOC-Застосунок"
+RELATIONS = ("depends_on", "implements", "supersedes", "belongs_to")
 _BAD_TITLE = re.compile(r'[\\/:*?"<>|\n\r]|\.\.')
 
 
@@ -139,12 +141,14 @@ class VaultStore:
 
     # ---------- запис ----------
     @staticmethod
-    def render(title: str, note_type: str, content: str, links: list[str], tags: list[str], created: str) -> str:
+    def render(title: str, note_type: str, content: str, links: list[str], tags: list[str], created: str,
+               extra: dict[str, str] | None = None) -> str:
         tag_line = ", ".join([note_type, *[t for t in tags if t != note_type]])
         body = f"# {title}\n\n{content.strip()}\n"
         if links:
             body += "\n## Зв'язки\n" + "\n".join(f"- [[{x}]]" for x in links) + "\n"
-        return f"---\ntype: {note_type}\ncreated: {created}\ntags: [{tag_line}]\n---\n\n{body}"
+        extra_lines = "".join(f"{k}: {v}\n" for k, v in (extra or {}).items())
+        return f"---\ntype: {note_type}\ncreated: {created}\ntags: [{tag_line}]\n{extra_lines}---\n\n{body}"
 
     def ingest_note(self, title: str, type: str, content: str,
                     links: list[str] | None = None, tags: list[str] | None = None) -> IngestResult:
@@ -157,10 +161,12 @@ class VaultStore:
         existing = self._all_notes().get(title)
         path = existing or (self.root / FOLDERS[type] / f"{title}.md")
         created = date.today().isoformat()
+        extra: dict[str, str] = {}
         if existing:
             fm, _ = parse_frontmatter(existing.read_text(encoding="utf-8"))
             created = fm.get("created", created)
-        new_text = self.render(title, type, content, links, tags, created)
+            extra = {k: v for k, v in fm.items() if k in RELATIONS}  # типізовані зв'язки зберігаємо
+        new_text = self.render(title, type, content, links, tags, created, extra)
         rel = str(path.relative_to(self.root))
         if existing and existing.read_text(encoding="utf-8") == new_text:
             # зміст не змінився, але раніше невдалий push треба догнати
@@ -183,3 +189,37 @@ class VaultStore:
             self._git("push", "-u", self.remote, self.branch)
             pushed = True
         return IngestResult(status, rel, pushed)
+
+    def add_relation(self, title: str, relation: str, targets: list[str]) -> IngestResult:
+        """Додає типізований зв'язок у frontmatter нотатки (ідемпотентно), комітить і пушить."""
+        if relation not in RELATIONS:
+            raise VaultError(f"Невідомий зв'язок {relation!r}; дозволені: {', '.join(RELATIONS)}")
+        title = validate_title(title)
+        targets = [validate_title(t) for t in targets]
+        self.sync()
+        notes = self._all_notes()
+        if title not in notes:
+            raise VaultError(f"Нотатку {title!r} не знайдено")
+        missing = [t for t in targets if t not in notes]
+        if missing:
+            raise VaultError(f"Цільових нотаток не існує: {missing}")
+        path = notes[title]
+        rel = str(path.relative_to(self.root))
+        fm, body = parse_frontmatter(path.read_text(encoding="utf-8"))
+        current = json.loads(fm[relation]) if relation in fm else []
+        merged = current + [t for t in targets if t not in current]
+        if merged == current:
+            pushed = self.push and self._unpushed()
+            if pushed:
+                self._git("push", "-u", self.remote, self.branch)
+            return IngestResult("unchanged", rel, pushed)
+        fm[relation] = json.dumps(merged, ensure_ascii=False)
+        head = "".join(f"{k}: {v}\n" for k, v in fm.items())
+        path.write_text(f"---\n{head}---\n\n{body}", encoding="utf-8")
+        self._git("add", rel)
+        self._git("commit", "-m", f"vault: relation {title} {relation}")
+        pushed = False
+        if self.push:
+            self._git("push", "-u", self.remote, self.branch)
+            pushed = True
+        return IngestResult("updated", rel, pushed)
